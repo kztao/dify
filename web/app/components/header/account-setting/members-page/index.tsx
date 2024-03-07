@@ -20,7 +20,7 @@ import { useProviderContext } from '@/context/provider-context'
 import { Plan } from '@/app/components/billing/type'
 import UpgradeBtn from '@/app/components/billing/upgrade-btn'
 import { NUM_INFINITE } from '@/app/components/billing/config'
-
+import { LanguagesSupported } from '@/i18n/language'
 dayjs.extend(relativeTime)
 
 const MembersPage = () => {
@@ -31,6 +31,7 @@ const MembersPage = () => {
     normal: t('common.members.normal'),
   }
   const { locale } = useContext(I18n)
+
   const { userProfile, currentWorkspace, isCurrentWorkspaceManager } = useAppContext()
   const { data, mutate } = useSWR({ url: '/workspaces/current/members' }, fetchMembers)
   const [inviteModalVisible, setInviteModalVisible] = useState(false)
@@ -44,7 +45,7 @@ const MembersPage = () => {
 
   return (
     <>
-      <div>
+      <div className='flex flex-col'>
         <div className='flex items-center mb-4 p-3 bg-gray-50 rounded-2xl'>
           <LogoEmbededChatHeader className='!w-10 !h-10' />
           <div className='grow mx-2'>
@@ -54,7 +55,7 @@ const MembersPage = () => {
                 {isNotUnlimitedMemberPlan
                   ? (
                     <div className='flex space-x-1'>
-                      <div>{t('billing.plansCommon.member')}{locale === 'en' && accounts.length > 1 && 's'}</div>
+                      <div>{t('billing.plansCommon.member')}{locale !== LanguagesSupported[1] && accounts.length > 1 && 's'}</div>
                       <div className='text-gray-700'>{accounts.length}</div>
                       <div>/</div>
                       <div>{plan.total.teamMembers === NUM_INFINITE ? t('billing.plansCommon.unlimited') : plan.total.teamMembers}</div>
@@ -63,7 +64,7 @@ const MembersPage = () => {
                   : (
                     <div className='flex space-x-1'>
                       <div>{accounts.length}</div>
-                      <div>{t('billing.plansCommon.memberAfter')}{locale === 'en' && accounts.length > 1 && 's'}</div>
+                      <div>{t('billing.plansCommon.memberAfter')}{locale !== LanguagesSupported[1] && accounts.length > 1 && 's'}</div>
                     </div>
                   )}
               </div>
@@ -82,13 +83,13 @@ const MembersPage = () => {
             {t('common.members.invite')}
           </div>
         </div>
-        <div className='overflow-x-auto'>
+        <div className='overflow-visible lg:overflow-visible'>
           <div className='flex items-center py-[7px] border-b border-gray-200 min-w-[480px]'>
             <div className='grow px-3 text-xs font-medium text-gray-500'>{t('common.members.name')}</div>
             <div className='shrink-0 w-[104px] text-xs font-medium text-gray-500'>{t('common.members.lastActive')}</div>
             <div className='shrink-0 w-[96px] px-3 text-xs font-medium text-gray-500'>{t('common.members.role')}</div>
           </div>
-          <div className='min-w-[480px]'>
+          <div className='min-w-[480px] relative'>
             {
               accounts.map(account => (
                 <div key={account.id} className='flex border-b border-gray-100'>

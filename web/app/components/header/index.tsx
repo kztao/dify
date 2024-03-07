@@ -10,6 +10,7 @@ import AppNav from './app-nav'
 import DatasetNav from './dataset-nav'
 import EnvNav from './env-nav'
 import ExploreNav from './explore-nav'
+import ToolsNav from './tools-nav'
 import GithubStar from './github-star'
 import { WorkspaceProvider } from '@/context/workspace-context'
 import { useAppContext } from '@/context/app-context'
@@ -19,7 +20,7 @@ import useBreakpoints, { MediaType } from '@/hooks/use-breakpoints'
 import { useProviderContext } from '@/context/provider-context'
 
 const navClassName = `
-  flex items-center relative mr-0 sm:mr-3 px-3 h-9 rounded-xl
+  flex items-center relative mr-0 sm:mr-3 px-3 h-8 rounded-xl
   font-medium text-sm
   cursor-pointer
 `
@@ -53,7 +54,7 @@ const Header = () => {
         </div>}
         {!isMobile && <>
           <Link href="/apps" className='flex items-center mr-4'>
-            <LogoSite />
+            <LogoSite className='object-contain' />
           </Link>
           <GithubStar />
         </>}
@@ -71,6 +72,7 @@ const Header = () => {
           <ExploreNav className={navClassName} />
           <AppNav />
           {isCurrentWorkspaceManager && <DatasetNav />}
+          <ToolsNav className={navClassName} />
         </div>
       )}
       <div className='flex items-center flex-shrink-0'>
@@ -89,7 +91,7 @@ const Header = () => {
           </div>
         )}
         <WorkspaceProvider>
-          <AccountDropdown isMobile={isMobile}/>
+          <AccountDropdown isMobile={isMobile} />
         </WorkspaceProvider>
       </div>
       {(isMobile && isShowNavMenu) && (
@@ -97,6 +99,7 @@ const Header = () => {
           <ExploreNav className={navClassName} />
           <AppNav />
           {isCurrentWorkspaceManager && <DatasetNav />}
+          <ToolsNav className={navClassName} />
         </div>
       )}
     </div>

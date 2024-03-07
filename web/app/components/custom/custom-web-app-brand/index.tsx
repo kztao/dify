@@ -11,20 +11,18 @@ import { ImagePlus } from '@/app/components/base/icons/src/vender/line/images'
 import { useProviderContext } from '@/context/provider-context'
 import { Plan } from '@/app/components/billing/type'
 import { imageUpload } from '@/app/components/base/image-uploader/utils'
-import type {} from '@/app/components/base/image-uploader/utils'
 import { useToastContext } from '@/app/components/base/toast'
 import {
   updateCurrentWorkspace,
 } from '@/service/common'
 import { useAppContext } from '@/context/app-context'
-import { API_PREFIX } from '@/config'
 
 const ALLOW_FILE_EXTENSIONS = ['svg', 'png']
 
 const CustomWebAppBrand = () => {
   const { t } = useTranslation()
   const { notify } = useToastContext()
-  const { plan } = useProviderContext()
+  const { plan, enableBilling } = useProviderContext()
   const {
     currentWorkspace,
     mutateCurrentWorkspace,
@@ -32,10 +30,11 @@ const CustomWebAppBrand = () => {
   } = useAppContext()
   const [fileId, setFileId] = useState('')
   const [uploadProgress, setUploadProgress] = useState(0)
-  const isSandbox = plan.type === Plan.sandbox
+  const isSandbox = enableBilling && plan.type === Plan.sandbox
   const uploading = uploadProgress > 0 && uploadProgress < 100
   const webappLogo = currentWorkspace.custom_config?.replace_webapp_logo || ''
   const webappBrandRemoved = currentWorkspace.custom_config?.remove_webapp_brand
+  const uploadDisabled = isSandbox || webappBrandRemoved || !isCurrentWorkspaceManager
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -122,7 +121,7 @@ const CustomWebAppBrand = () => {
                 POWERED BY
                 {
                   webappLogo
-                    ? <img key={webappLogo} src={`${API_PREFIX.slice(0, -12)}/files/workspaces/${currentWorkspace.id}/webapp-logo`} alt='logo' className='ml-2 block w-auto h-5' />
+                    ? <img key={webappLogo} src={webappLogo} alt='logo' className='ml-2 block w-auto h-5' />
                     : <LogoSite className='ml-2 !h-5' />
                 }
               </div>
@@ -153,9 +152,9 @@ const CustomWebAppBrand = () => {
               <Button
                 className={`
                   relative mr-2 !h-8 !px-3 bg-white !text-[13px] 
-                  ${isSandbox ? 'opacity-40' : ''}
+                  ${uploadDisabled ? 'opacity-40' : ''}
                 `}
-                disabled={isSandbox || webappBrandRemoved || !isCurrentWorkspaceManager}
+                disabled={uploadDisabled}
               >
                 <ImagePlus className='mr-2 w-4 h-4' />
                 {
@@ -166,13 +165,13 @@ const CustomWebAppBrand = () => {
                 <input
                   className={`
                     absolute block inset-0 opacity-0 text-[0] w-full
-                    ${(isSandbox || webappBrandRemoved) ? 'cursor-not-allowed' : 'cursor-pointer'}
+                    ${uploadDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}
                   `}
                   onClick={e => (e.target as HTMLInputElement).value = ''}
                   type='file'
                   accept={ALLOW_FILE_EXTENSIONS.map(ext => `.${ext}`).join(',')}
                   onChange={handleChange}
-                  disabled={isSandbox || webappBrandRemoved || !isCurrentWorkspaceManager}
+                  disabled={uploadDisabled}
                 />
               </Button>
             )
@@ -213,9 +212,9 @@ const CustomWebAppBrand = () => {
           <Button
             className={`
               !h-8 !px-3 bg-white !text-[13px] 
-              ${isSandbox ? 'opacity-40' : ''}
+              ${(uploadDisabled || (!webappLogo && !webappBrandRemoved)) ? 'opacity-40' : ''}
             `}
-            disabled={isSandbox || (!webappLogo && !webappBrandRemoved) || webappBrandRemoved || !isCurrentWorkspaceManager}
+            disabled={uploadDisabled || (!webappLogo && !webappBrandRemoved)}
             onClick={handleRestore}
           >
             {t('custom.restore')}

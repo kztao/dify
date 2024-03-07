@@ -1,19 +1,20 @@
-from flask import request, current_app
+from flask import current_app, request
 from flask_login import current_user
-
-import services
-from libs.login import login_required
 from flask_restful import Resource, marshal_with
 
+import services
 from controllers.console import api
-from controllers.console.datasets.error import NoFileUploadedError, TooManyFilesError, FileTooLargeError, \
-    UnsupportedFileTypeError
-
+from controllers.console.datasets.error import (
+    FileTooLargeError,
+    NoFileUploadedError,
+    TooManyFilesError,
+    UnsupportedFileTypeError,
+)
 from controllers.console.setup import setup_required
-from controllers.console.wraps import account_initialization_required
-from fields.file_fields import upload_config_fields, file_fields
-
-from services.file_service import FileService
+from controllers.console.wraps import account_initialization_required, cloud_edition_billing_resource_check
+from fields.file_fields import file_fields, upload_config_fields
+from libs.login import login_required
+from services.file_service import ALLOWED_EXTENSIONS, UNSTRUSTURED_ALLOWED_EXTENSIONS, FileService
 
 PREVIEW_WORDS_LIMIT = 3000
 
@@ -38,6 +39,7 @@ class FileApi(Resource):
     @login_required
     @account_initialization_required
     @marshal_with(file_fields)
+    @cloud_edition_billing_resource_check(resource='documents')
     def post(self):
 
         # get file from request
@@ -75,11 +77,7 @@ class FileSupportTypeApi(Resource):
     @account_initialization_required
     def get(self):
         etl_type = current_app.config['ETL_TYPE']
-        if etl_type == 'Unstructured':
-            allowed_extensions = ['txt', 'markdown', 'md', 'pdf', 'html', 'htm', 'xlsx',
-                                  'docx', 'csv', 'eml', 'msg', 'pptx', 'ppt', 'xml']
-        else:
-            allowed_extensions = ['txt', 'markdown', 'md', 'pdf', 'html', 'htm', 'xlsx', 'docx', 'csv']
+        allowed_extensions = UNSTRUSTURED_ALLOWED_EXTENSIONS if etl_type == 'Unstructured' else ALLOWED_EXTENSIONS
         return {'allowed_extensions': allowed_extensions}
 
 

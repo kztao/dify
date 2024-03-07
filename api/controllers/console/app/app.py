@@ -1,25 +1,30 @@
-# -*- coding:utf-8 -*-
 import json
 import logging
 from datetime import datetime
 
 from flask_login import current_user
-from libs.login import login_required
-from flask_restful import Resource, reqparse, marshal_with, abort, inputs
+from flask_restful import Resource, abort, inputs, marshal_with, reqparse
 from werkzeug.exceptions import Forbidden
 
-from constants.model_template import model_templates, demo_model_templates
+from constants.languages import demo_model_templates, languages
+from constants.model_template import model_templates
 from controllers.console import api
 from controllers.console.app.error import AppNotFoundError, ProviderNotInitializeError
 from controllers.console.setup import setup_required
 from controllers.console.wraps import account_initialization_required, cloud_edition_billing_resource_check
-from core.model_providers.error import ProviderTokenNotInitError, LLMBadRequestError
-from core.model_providers.model_factory import ModelFactory
-from core.model_providers.model_provider_factory import ModelProviderFactory
+from core.errors.error import LLMBadRequestError, ProviderTokenNotInitError
+from core.model_manager import ModelManager
+from core.model_runtime.entities.model_entities import ModelType
+from core.provider_manager import ProviderManager
 from events.app_event import app_was_created, app_was_deleted
-from fields.app_fields import app_pagination_fields, app_detail_fields, template_list_fields, \
-    app_detail_fields_with_site
 from extensions.ext_database import db
+from fields.app_fields import (
+    app_detail_fields,
+    app_detail_fields_with_site,
+    app_pagination_fields,
+    template_list_fields,
+)
+from libs.login import login_required
 from models.model import App, AppModelConfig, Site
 from services.app_model_config_service import AppModelConfigService
 
@@ -42,14 +47,31 @@ class AppListApi(Resource):
         parser = reqparse.RequestParser()
         parser.add_argument('page', type=inputs.int_range(1, 99999), required=False, default=1, location='args')
         parser.add_argument('limit', type=inputs.int_range(1, 100), required=False, default=20, location='args')
+        parser.add_argument('mode', type=str, choices=['chat', 'completion', 'all'], default='all', location='args', required=False)
+        parser.add_argument('name', type=str, location='args', required=False)
         args = parser.parse_args()
 
+        filters = [
+            App.tenant_id == current_user.current_tenant_id,
+            App.is_universal == False
+        ]
+
+        if args['mode'] == 'completion':
+            filters.append(App.mode == 'completion')
+        elif args['mode'] == 'chat':
+            filters.append(App.mode == 'chat')
+        else:
+            pass
+
+        if 'name' in args and args['name']:
+            filters.append(App.name.ilike(f'%{args["name"]}%'))
+
         app_models = db.paginate(
-            db.select(App).where(App.tenant_id == current_user.current_tenant_id,
-                                 App.is_universal == False).order_by(App.created_at.desc()),
+            db.select(App).where(*filters).order_by(App.created_at.desc()),
             page=args['page'],
             per_page=args['limit'],
-            error_out=False)
+            error_out=False
+        )
 
         return app_models
 
@@ -62,50 +84,59 @@ class AppListApi(Resource):
         """Create app"""
         parser = reqparse.RequestParser()
         parser.add_argument('name', type=str, required=True, location='json')
-        parser.add_argument('mode', type=str, choices=['completion', 'chat'], location='json')
+        parser.add_argument('mode', type=str, choices=['completion', 'chat', 'assistant'], location='json')
         parser.add_argument('icon', type=str, location='json')
         parser.add_argument('icon_background', type=str, location='json')
         parser.add_argument('model_config', type=dict, location='json')
         args = parser.parse_args()
 
         # The role of the current user in the ta table must be admin or owner
-        if current_user.current_tenant.current_role not in ['admin', 'owner']:
+        if not current_user.is_admin_or_owner:
             raise Forbidden()
 
         try:
-            default_model = ModelFactory.get_text_generation_model(
-                tenant_id=current_user.current_tenant_id
+            provider_manager = ProviderManager()
+            default_model_entity = provider_manager.get_default_model(
+                tenant_id=current_user.current_tenant_id,
+                model_type=ModelType.LLM
             )
         except (ProviderTokenNotInitError, LLMBadRequestError):
-            default_model = None
+            default_model_entity = None
         except Exception as e:
             logging.exception(e)
-            default_model = None
+            default_model_entity = None
 
         if args['model_config'] is not None:
             # validate config
             model_config_dict = args['model_config']
 
-            # get model provider
-            model_provider = ModelProviderFactory.get_preferred_model_provider(
-                current_user.current_tenant_id,
-                model_config_dict["model"]["provider"]
+            # Get provider configurations
+            provider_manager = ProviderManager()
+            provider_configurations = provider_manager.get_configurations(current_user.current_tenant_id)
+
+            # get available models from provider_configurations
+            available_models = provider_configurations.get_models(
+                model_type=ModelType.LLM,
+                only_active=True
             )
 
-            if not model_provider:
-                if not default_model:
+            # check if model is available
+            available_models_names = [f'{model.provider.provider}.{model.model}' for model in available_models]
+            provider_model = f"{model_config_dict['model']['provider']}.{model_config_dict['model']['name']}"
+            if provider_model not in available_models_names:
+                if not default_model_entity:
                     raise ProviderNotInitializeError(
-                        f"No Default System Reasoning Model available. Please configure "
-                        f"in the Settings -> Model Provider.")
+                        "No Default System Reasoning Model available. Please configure "
+                        "in the Settings -> Model Provider.")
                 else:
-                    model_config_dict["model"]["provider"] = default_model.model_provider.provider_name
-                    model_config_dict["model"]["name"] = default_model.name
+                    model_config_dict["model"]["provider"] = default_model_entity.provider.provider
+                    model_config_dict["model"]["name"] = default_model_entity.model
 
             model_configuration = AppModelConfigService.validate_configuration(
                 tenant_id=current_user.current_tenant_id,
                 account=current_user,
                 config=model_config_dict,
-                mode=args['mode']
+                app_mode=args['mode']
             )
 
             app = App(
@@ -129,21 +160,21 @@ class AppListApi(Resource):
             app_model_config = AppModelConfig(**model_config_template['model_config'])
 
             # get model provider
-            model_provider = ModelProviderFactory.get_preferred_model_provider(
-                current_user.current_tenant_id,
-                app_model_config.model_dict["provider"]
-            )
+            model_manager = ModelManager()
 
-            if not model_provider:
-                if not default_model:
-                    raise ProviderNotInitializeError(
-                        f"No Default System Reasoning Model available. Please configure "
-                        f"in the Settings -> Model Provider.")
-                else:
-                    model_dict = app_model_config.model_dict
-                    model_dict['provider'] = default_model.model_provider.provider_name
-                    model_dict['name'] = default_model.name
-                    app_model_config.model = json.dumps(model_dict)
+            try:
+                model_instance = model_manager.get_default_model_instance(
+                    tenant_id=current_user.current_tenant_id,
+                    model_type=ModelType.LLM
+                )
+            except ProviderTokenNotInitError:
+                model_instance = None
+
+            if model_instance:
+                model_dict = app_model_config.model_dict
+                model_dict['provider'] = model_instance.provider
+                model_dict['name'] = model_instance.model
+                app_model_config.model = json.dumps(model_dict)
 
         app.name = args['name']
         app.mode = args['mode']
@@ -176,7 +207,7 @@ class AppListApi(Resource):
         app_was_created.send(app)
 
         return app, 201
-
+    
 
 class AppTemplateApi(Resource):
 
@@ -191,7 +222,7 @@ class AppTemplateApi(Resource):
 
         templates = demo_model_templates.get(interface_language)
         if not templates:
-            templates = demo_model_templates.get('en-US')
+            templates = demo_model_templates.get(languages[0])
 
         return {'data': templates}
 
@@ -216,7 +247,7 @@ class AppApi(Resource):
         """Delete app"""
         app_id = str(app_id)
 
-        if current_user.current_tenant.current_role not in ['admin', 'owner']:
+        if not current_user.is_admin_or_owner:
             raise Forbidden()
 
         app = _get_app(app_id, current_user.current_tenant_id)
